@@ -9,7 +9,12 @@ export const POST: RequestHandler = async ({ request }) => {
 	// For example, you might want to process the data sent in `request.body`
 
 	// In this mock scenario, we're going to stream back 'lorem ipsum' text
-	const { systemMessage, userMessage } = await request.json();
+	const { systemMessage, userMessage, output } = await request.json();
+
+	// console log all 3 variables
+	console.log('systemMessage:', systemMessage);
+	console.log('userMessage:', userMessage);
+	console.log('ouput:', output);
 
 	const messages = [
 		{
@@ -18,7 +23,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		},
 		{
 			role: 'user',
-			content: userMessage
+			content: `${userMessage} 
+			Output message:"""
+			${output}"""
+			`
 		}
 	];
 
