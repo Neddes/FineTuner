@@ -237,16 +237,29 @@
 	}
 
 	function downloadJSONNLFile() {
-		const filteredItems = fineTuneItems
-			.map((item) => ({
-				...item,
-				pairs: item.pairs
-					.filter((pair) => pair.input && pair.output)
-					.map(({ input, output }) => ({ input, output })) // Reconstruct pairs to exclude 'hovered'
-			}))
-			.filter((item) => item.pairs.length > 0);
+		const transformItems = fineTuneItems.reduce((acc, item) => {
+			// Filter pairs with valid input and output
+			const validPairs = item.pairs.filter((pair) => pair.input && pair.output);
 
-		const blob = new Blob([JSON.stringify(filteredItems)], { type: 'application/json' });
+			// Only proceed if there are valid pairs
+			if (validPairs.length > 0) {
+				const messages = [{ role: 'system', content: item.systemMessage || 'No system message' }];
+
+				// Add each pair of user and assistant messages
+				validPairs.forEach((pair) => {
+					messages.push({ role: 'user', content: pair.input });
+					messages.push({ role: 'assistant', content: pair.output });
+				});
+
+				acc.push({ messages });
+			}
+
+			return acc;
+		}, []);
+
+		const downloadContent = transformItems.map((item) => JSON.stringify(item)).join('\n');
+
+		const blob = new Blob([downloadContent], { type: 'application/json' });
 		const url = URL.createObjectURL(blob);
 		const link = document.createElement('a');
 		link.href = url;
