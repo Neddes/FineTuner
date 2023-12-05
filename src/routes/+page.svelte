@@ -237,15 +237,24 @@
 	}
 
 	function downloadJSONNLFile() {
-		const transformItems = fineTuneItems.reduce((acc, item) => {
-			// Filter pairs with valid input and output
+		// Define the type for the structure of the transformed items
+		type Message = {
+			role: 'system' | 'user' | 'assistant';
+			content: string;
+		};
+
+		type MessagesItem = {
+			messages: Message[];
+		};
+
+		const transformItems: MessagesItem[] = fineTuneItems.reduce<MessagesItem[]>((acc, item) => {
 			const validPairs = item.pairs.filter((pair) => pair.input && pair.output);
 
-			// Only proceed if there are valid pairs
 			if (validPairs.length > 0) {
-				const messages = [{ role: 'system', content: item.systemMessage || 'No system message' }];
+				const messages: Message[] = [
+					{ role: 'system', content: item.systemMessage || 'No system message' }
+				];
 
-				// Add each pair of user and assistant messages
 				validPairs.forEach((pair) => {
 					messages.push({ role: 'user', content: pair.input });
 					messages.push({ role: 'assistant', content: pair.output });
