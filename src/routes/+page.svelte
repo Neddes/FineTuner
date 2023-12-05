@@ -6,7 +6,8 @@
 	import Separator from '$lib/components/ui/separator/separator.svelte';
 	import Textarea from '$lib/components/ui/textarea/textarea.svelte';
 	import { onMount } from 'svelte';
-	import * as HoverCard from '$lib/components/ui/hover-card';
+
+	import Papa from 'papaparse';
 
 	let response = '';
 	let completedResponse = '';
@@ -17,6 +18,106 @@
 	let fineTuneSystemMessage = '';
 
 	let errorMessage = '';
+
+	let selectedFile: File | null = null;
+	let fileInput: any;
+	let fileData: any;
+	let filename: string | null = null;
+	let parsedDataSuccesfully = false;
+	let processedFileUrl: string | null = null;
+
+	let parsedData: Record<string, string>[] = [];
+	let headers: string[] = [];
+
+	const requiredHeaders = ['input', 'output'];
+
+	const handleFileUpload = async (event: Event) => {
+		const input = event.target as HTMLInputElement;
+		if (input.files) {
+			selectedFile = input.files[0];
+			try {
+				await handleFile();
+				setCSVDataAsFineTuneItems();
+			} catch (error) {
+				console.error('Error handling file:', error);
+			}
+		}
+	};
+
+	function setCSVDataAsFineTuneItems() {
+		// create a fineTuneItem for each row in the parsedData array
+
+		fineTuneItems = parsedData.map((row) => ({
+			systemMessage: fineTuneSystemMessage,
+			pairs: [
+				{
+					input: row.input,
+					output: row.output
+				}
+			]
+		}));
+	}
+
+	function handleFile() {
+		return new Promise<void>((resolve, reject) => {
+			if (!selectedFile) {
+				reject('No file selected');
+				return;
+			}
+
+			Papa.parse(selectedFile, {
+				complete: function (results: any) {
+					parseCSV(results.data);
+					if (fileData) {
+						parsedDataSuccesfully = true;
+						resolve();
+					} else {
+						reject('Error parsing data');
+					}
+				},
+				header: true,
+				skipEmptyLines: true,
+				dynamicTyping: true
+			});
+		});
+	}
+
+	const parseCSV = (rows: any) => {
+		// Check if the required headers are present
+		const allHeaders = rows.length > 0 ? Object.keys(rows[0]) : [];
+		const missingHeaders = requiredHeaders.filter((rh) => !allHeaders.includes(rh));
+
+		if (missingHeaders.length > 0) {
+			// throw basic alert error message:
+			// just window browser allert:
+			alert(`The following headers are missing: ${missingHeaders.join(', ')}`);
+			return;
+		}
+
+		// Map each row to an object containing only the required headers
+		parsedData = rows;
+		headers = allHeaders;
+		fileData = parsedData;
+		if (!fileData) {
+			alert(`Something went wrong while parsing the file`);
+
+			return;
+		}
+	};
+
+	function triggerFileInput() {
+		if (fileInput) {
+			fileData = null;
+			processedFileUrl = null;
+			parsedDataSuccesfully = false;
+			parsedData = [];
+			headers = [];
+			filename = null;
+			fileInput.value = '';
+		}
+
+		fileInput.click(); // Trigger the hidden file input
+	}
 
 	async function generateSyntheticData() {
 		if (stream) {
@@ -93,9 +194,6 @@
 
 	let fineTuneItems: FineTuneItem[] = [];
 
-	function consoleLog() {
-		console.log(fineTuneItems);
-	}
 	function addRow() {
 		fineTuneItems = fineTuneItems.concat({
 			systemMessage: fineTuneSystemMessage,
@@ -112,7 +210,7 @@
 	onMount(() => {
 		addRow();
 	});
-	$: console.log(JSON.stringify(fineTuneItems));
+
 	$: {
 		fineTuneItems = fineTuneItems.map((item) => ({
 			...item,
@@ -131,6 +229,30 @@
 		fineTuneItems[index].pairs[pairIndex].hovered = state;
 		fineTuneItems = [...fineTuneItems];
 	}
+	function handleSecondaryClick() {
+		let link = document.createElement('a');
+		link.href = 'src/lib/assets/examplefiles/example-input-output.csv';
+		link.download = 'example-input-output.csv';
+		link.click();
+	}
+
+	function downloadJSONNLFile() {
+		const filteredItems = fineTuneItems
+			.map((item) => ({
+				...item,
+				pairs: item.pairs
+					.filter((pair) => pair.input && pair.output)
+					.map(({ input, output }) => ({ input, output })) // Reconstruct pairs to exclude 'hovered'
+			}))
+			.filter((item) => item.pairs.length > 0);
+
+		const blob = new Blob([JSON.stringify(filteredItems)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = 'finetune.jsonl';
+		link.click();
+	}
 </script>
 
 <div class="hidden h-full flex-col md:flex w-full items-center">
@@ -139,7 +261,7 @@
 	>
 		<h2 class="text-lg font-semibold">FineTuner</h2>
 		<div class="flex flex-row gap-x-4">
-			<Button>Download File</Button>
+			<Button on:click={downloadJSONNLFile}>Download File</Button>
 			<Avatar.Root>
 				<Avatar.Fallback>TT</Avatar.Fallback>
 			</Avatar.Root>
@@ -173,7 +295,6 @@
 					will be the same for all of them.
 				</p>
 			</div>
-
 			<Table.Root>
 				<Table.Header>
 					<Table.Row>
@@ -182,11 +303,12 @@
 						<Table.Head class="border border-gray-300 rounded-tr-lg">Output</Table.Head>
 					</Table.Row>
 				</Table.Header>
-				<Table.Body class="relative">
+				<Table.Body>
 					{#each fineTuneItems as fineTuneItem, index}
 						{#each fineTuneItem.pairs as item, i (item)}
 							<Table.Row
-								class="relative"
+								class="relative overflow-visible"
+								style="  -webkit-transform: translate3d(0, 0, 0);"
 								on:mouseenter={() => updateHoverState(index, i, true)}
 								on:mouseleave={() => updateHoverState(index, i, false)}
 							>
@@ -215,12 +337,16 @@
 									/>
 								</Table.Cell>
 								{#if item.hovered}
-									<button
-										on:click={() => addFineTunePair(index)}
-										class="p-2 bg-blue-500 text-white rounded w-fit absolute inset-x-0 mx-auto translate-y-[-50%] top-1/2 z-10"
+									<div
+										class="w-full justify-center flex items-center absolute top-24 left-24 z-50 overflow-visible"
 									>
-										Add Fine Tune Item
-									</button>
+										<button
+											on:click={() => addFineTunePair(index)}
+											class="p-2 bg-blue-500 text-white rounded absolute overflow-visible"
+										>
+											+
+										</button>
+									</div>
 								{/if}
 							</Table.Row>
 						{/each}
@@ -229,7 +355,7 @@
 			</Table.Root>
 
 			<div class="flex flex-row w-full justify-between">
-				<Button on:click={consoleLog} variant="secondary">log items to console</Button>
+				<!-- <Button on:click={consoleLog} variant="secondary">log items to console</Button> -->
 				<Button on:click={addRow}>Add Full Row</Button>
 			</div>
 
@@ -250,6 +376,18 @@
 				{#if errorMessage}
 					<p class="text-red-500 text-xs font-light">{errorMessage}</p>
 				{/if}
+				<div class="flex flex-row justify-between">
+					<Button variant="link" on:click={handleSecondaryClick}>Download Example File</Button>
+					<Button variant="secondary" on:click={triggerFileInput}>Upload CSV</Button>
+					<input
+						bind:this={fileInput}
+						id="file-input-element"
+						type="file"
+						on:change={handleFileUpload}
+						accept=".csv"
+						class="hidden"
+					/>
+				</div>
 			</div>
 		</div>
 	</div>
